@@ -1,0 +1,7 @@
+numpy>=1.26,<3
+pandas>=2.2,<3
+Pillow>=10,<12
+torch>=2.2
+transformers>=4.41
+tqdm>=4.66
+pytest>=8,<9
