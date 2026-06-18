@@ -1,0 +1,180 @@
+# =============================================================================
+# Task 1 — Text-only ranking configuration (Qwen3.6-35B-A3B FINAL TEST)
+# =============================================================================
+# This config produces the FINAL TEST submission for Task 1.
+# It merges all three available training splits and ranks the blind
+# test set (test_public.csv).
+#
+# Quick-start:
+#   python generate_rankings.py --config configs/task1/config_Qwen3.6-35B-A3B-test.yaml
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# API settings
+# -----------------------------------------------------------------------------
+# Any OpenAI-compatible endpoint can be used (vLLM, TGI, Together, etc.).
+# The model field should be set to the specific chat model identifier.
+# -----------------------------------------------------------------------------
+api:
+  base_url: "https://api.openai.com/v1"
+  api_key: null
+  model: "your-chat-model-name"
+  timeout_seconds: 120
+  enable_thinking: false
+
+# -----------------------------------------------------------------------------
+# Inference hyperparameters
+# -----------------------------------------------------------------------------
+# Deterministic decoding (temperature=0) is used for reproducibility.
+# max_tokens=4096 matches the value reported in the paper (Table 6).
+# seed=42 fixes the global random state used for any stochastic operations.
+# -----------------------------------------------------------------------------
+inference:
+  temperature: 0.0
+  top_p: 1.0
+  max_tokens: 4096
+  sleep_seconds: 0.1
+  max_retries: 3
+  retry_backoff_seconds: 2.0
+  seed: 42
+
+# -----------------------------------------------------------------------------
+# Data paths
+# -----------------------------------------------------------------------------
+# FINAL TEST setup:
+#   - training_csvs merges all three splits (dev + train + extra train).
+#   - input_csv points to the blind test set (test_public.csv).
+# -----------------------------------------------------------------------------
+data:
+  training_csvs:
+    - "data/development_phase_dataset/dev_public.csv"
+    - "data/development_phase_dataset/train_public.csv"
+    - "data/test_public/train_public.csv"
+
+  input_csv: "data/test_public/test_public.csv"
+  images_dir: "data/images"
+  output_csv: "results/results_{model_slug}_final_task1.csv"
+  output_zip: "results/results_{model_slug}_final_task1.zip"
+  max_rows: null
+
+# -----------------------------------------------------------------------------
+# Task switches
+# -----------------------------------------------------------------------------
+# Task 1 (text-only ranking) is enabled.  Task 2 is disabled.
+# -----------------------------------------------------------------------------
+task_1:
+  enabled: true
+  model: null
+
+task_2:
+  enabled: false
+  use_images: false
+  model: null
+
+# -----------------------------------------------------------------------------
+# Few-shot example selection
+# -----------------------------------------------------------------------------
+# Similarity metric used to retrieve training examples for each test article.
+# Supported: "tfidf" | "semantic" | "hybrid_rrf"
+# -----------------------------------------------------------------------------
+fewshot_selection:
+  enabled: true
+  num_examples: 3
+  similarity_metric: "semantic"
+
+  semantic:
+    base_url: "https://api.openai.com/v1"
+    api_key: null
+    model: "your-embedding-model-name"
+    cache_embeddings: true
+    cache_path: ".embeddings_cache.pkl"
+    max_retries: 3
+    retry_backoff_seconds: 1
+
+  rrf:
+    k: 60
+    tfidf_weight: 1.0
+    semantic_weight: 1.0
+
+  min_similarity: 0.2
+
+# -----------------------------------------------------------------------------
+# Prompt templates (Spanish — shared task language)
+# -----------------------------------------------------------------------------
+# system:      high-level instructions and ranking criteria sent as system msg.
+# user_template: per-article prompt with {article} and {title_1}..{title_10}
+#                placeholders.
+# -----------------------------------------------------------------------------
+prompt:
+  system: |
+    Eres un editor experto en política española y en verificación de titulares.
+
+    Tu tarea es ordenar 10 titulares candidatos del más relevante al menos relevante para un artículo periodístico.
+
+    Criterios de ranking, en este orden:
+    1. Fidelidad: el titular debe reflejar con precisión lo que dice el artículo.
+    2. Especificidad: prioriza el titular que recoge mejor los hechos, actores, acciones y contexto concretos.
+    3. Coherencia semántica: el titular debe encajar con el tema central, no solo con palabras sueltas.
+    4. Penalización de errores: baja en el ranking titulares que:
+       - Nombren a una persona, partido o institución diferente a la del artículo.
+       - Atribuyan una acción que el artículo no menciona explícitamente.
+       - Usen lenguaje valorativo ("escándalo", "fracaso", "polémica") sin respaldo textual directo.
+       - Capturen solo el tema general pero omitan el hecho concreto relatado.
+    5. Coherencia visual (solo si se proporciona imagen): si la imagen muestra a una persona, lugar o acción concreta, prioriza titulares que coincidan con ese contenido visual frente a los que lo ignoran o contradicen.
+
+    Reglas de salida:
+    - Devuelve solo una secuencia de 10 tokens separados por espacios.
+    - Usa cada token t1, t2, ..., t10 exactamente una vez.
+    - El primer token debe ser el titular más relevante y el último el menos relevante.
+    - No devuelvas explicaciones, signos de puntuación, texto adicional ni saltos de línea.
+
+    Ejemplo de salida válida:
+    t3 t1 t9 t4 t2 t10 t8 t7 t6 t5
+
+  user_template: |
+    ### ARTÍCULO ###
+    {article}
+
+    ### TITULARES CANDIDATOS ###
+    IMPORTANTE: El orden de aparición de los titulares NO indica su relevancia. Evalúa cada uno de forma independiente.
+
+    t1: {title_1}
+    t2: {title_2}
+    t3: {title_3}
+    t4: {title_4}
+    t5: {title_5}
+    t6: {title_6}
+    t7: {title_7}
+    t8: {title_8}
+    t9: {title_9}
+    t10: {title_10}
+
+    Ordena los titulares del más relevante al menos relevante.
+
+    Recuerda:
+    - Prioriza el titular más fiel y específico al contenido real del artículo.
+    - Penaliza titulares incompletos, engañosos, sensacionalistas o que atribuyan hechos no mencionados.
+    - El orden de aparición arriba no implica relevancia: evalúa cada titular de forma independiente.
+    - Devuelve solo los tokens t1..t10 en orden, una sola vez cada uno, en una única línea.
+
+# -----------------------------------------------------------------------------
+# Debug options
+# -----------------------------------------------------------------------------
+debug:
+  print_model_output: false
+  print_model_output_rows: 0
+
+# -----------------------------------------------------------------------------
+# Evaluation (optional)
+# -----------------------------------------------------------------------------
+# Enabled so metrics can be computed if a reference is available.
+# When enabled, computes PA-nDCG with the hard top-1 condition against a
+# reference CSV that contains a y_true column.
+# -----------------------------------------------------------------------------
+evaluation:
+  enabled: true
+  reference_csv: "data/dev_public.csv"
+  k: 10
+  alpha: 0.9
+  save_json: true
+  output_json: "results/metrics_{model_slug}_task1.json"
