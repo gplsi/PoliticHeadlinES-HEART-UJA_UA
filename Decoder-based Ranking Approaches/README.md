@@ -96,6 +96,3 @@ Key sections in the YAML configs:
 ├── README.md                         # This file
 └── PAPER.md                          # Paper overview
 ```
-
-
-See [PAPER.md](PAPER.md) for citations.
